@@ -10,9 +10,17 @@ Updating them manually in the ReShade UI each time is tedious. Editing the prese
 
 ## How it works
 
-PCSX2 renders the PS2 framebuffer to an internal render target sized at `(native_resolution × upscale_factor)`. When the game changes video mode, PCSX2 creates a new render target at the new size.
+### Primary — scissor rect analysis
 
-The addon listens to the `init_resource` event and checks every new render target: if its width and height are both clean integer multiples of a known PS2 native resolution — using the **same factor** for both axes — the native resolution is identified and the shader definitions are updated.
+PCSX2 translates the PS2 GS SCISSOR register into a D3D/Vulkan scissor rectangle for each draw call. The addon accumulates these rectangles over a rolling window of 8 frames: any rectangle whose dimensions are an integer multiple of a known PS2 native resolution is counted. The **smallest** mode that reaches the minimum count threshold is taken as the active resolution.
+
+This correctly handles cases where PCSX2 reuses a larger render target for a smaller display mode (e.g. a 512×448 RT reused for a 512×224 display): both 512×224 and 512×448 scissors appear in the window, but the smallest qualifying result is 512×224.
+
+Accumulating over multiple frames is necessary because some modes emit only ~1 matching scissor per frame — too sparse to qualify within a single frame, but reliable over a short window.
+
+### Fallback — render target detection
+
+Some modes emit no detectable scissors. For those, the addon monitors newly created render targets via `init_resource`: if a render target's dimensions are a clean integer multiple of a known PS2 native resolution — using the same factor for both axes — the native resolution is identified.
 
 ```
 RT 1024×896  →  1024/512 = 2,  896/448 = 2  →  native 512×448  ✓
@@ -20,7 +28,7 @@ RT 1280×896  →  1280/640 = 2,  896/448 = 2  →  native 640×448  ✓
 RT 3840×2160 →  3840/512 = 7.5 (not integer) →  ignored         ✓
 ```
 
-The display resolution never satisfies the criterion because it results from aspect-ratio stretching, not an integer upscale.
+The fallback result is used only when scissor analysis produces no qualifying mode in a given window.
 
 ## Supported native resolutions
 
@@ -29,13 +37,15 @@ The display resolution never satisfies the criterion because it results from asp
 | 640 | 480 |
 | 640 | 448 |
 | 512 | 448 |
+| 512 | 256 |
 | 512 | 240 |
+| 512 | 224 |
 | 320 | 240 |
 | 320 | 224 |
 | 256 | 240 |
 | 256 | 224 |
 
-Any integer upscale factor (1×–8×) is handled automatically.
+Any integer upscale factor is handled automatically.
 
 ## Requirements
 
