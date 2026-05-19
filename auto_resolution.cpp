@@ -28,6 +28,15 @@
  *   Modes whose draw calls emit no detectable scissors (e.g. 512x256) are
  *   caught by monitoring newly created render targets.  The inferred native
  *   resolution is used when scissor analysis produces no qualifying result.
+ *
+ * Downgrade guard:
+ *   Spurious sub-resolution scissors (from PCSX2 internal ops or particle
+ *   effects) appear alongside the real display-mode scissors within the same
+ *   window.  A candidate smaller than the applied mode is suppressed while
+ *   the applied mode's scissors are still qualifying.  When they disappear —
+ *   meaning the mode genuinely changed — the downgrade is allowed through.
+ *   On suppression the RT baseline is restored to the confirmed display mode
+ *   so that a corrupt s_rt_native cannot poison the scissor-less fallback.
  */
 
 #include <reshade.hpp>
@@ -134,14 +143,40 @@ static void on_reshade_present(effect_runtime *runtime)
             break;
         }
     }
-    std::memset(s_acc_counts, 0, sizeof(s_acc_counts));
 
-    // Reject scissor modes whose native width differs from the RT baseline.
-    // Valid sub-modes (e.g. 512x224 within a 512x448 RT) share the same width;
-    // internal ops during transitions (e.g. 256x224 in a 512x448 RT) do not.
-    if (best_idx >= 0 && s_rt_native_w > 0 &&
-        k_ps2_modes[best_idx].w != s_rt_native_w)
-        best_idx = -1;
+    // Downgrade guard: suppress a candidate smaller than the applied mode while
+    // the applied mode's own scissors are still qualifying.  Spurious scissors
+    // from PCSX2 internal ops or particle effects always co-occur with the real
+    // display-mode scissors; a genuine mode change stops the old scissors first.
+    // On suppression, restore the RT baseline to the confirmed display mode so
+    // that a render target created by an effect cannot corrupt the fallback.
+    if (best_idx >= 0 && s_applied_width > 0)
+    {
+        const bool is_downgrade =
+            k_ps2_modes[best_idx].w < s_applied_width ||
+            (k_ps2_modes[best_idx].w == s_applied_width &&
+             k_ps2_modes[best_idx].h < s_applied_height);
+
+        if (is_downgrade)
+        {
+            bool applied_still_active = false;
+            for (uint32_t i = 0; i < k_mode_count && !applied_still_active; ++i)
+            {
+                if (k_ps2_modes[i].w == s_applied_width &&
+                    k_ps2_modes[i].h == s_applied_height &&
+                    s_acc_counts[i] >= MIN_ACC_COUNT)
+                    applied_still_active = true;
+            }
+            if (applied_still_active)
+            {
+                best_idx      = -1;
+                s_rt_native_w = s_applied_width;
+                s_rt_native_h = s_applied_height;
+            }
+        }
+    }
+
+    std::memset(s_acc_counts, 0, sizeof(s_acc_counts));
 
     uint32_t w, h;
     if (best_idx >= 0)
