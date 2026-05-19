@@ -64,7 +64,7 @@ Any integer upscale factor is handled automatically.
 
 ## Installation
 
-Copy `AutoResolution64.addon` to the same folder as `reshade64.dll` and the PCSX2 executable. ReShade loads all `.addon` files in that directory automatically on startup.
+Copy `AutoResolution64.addon` to the same folder as `pcsx2-qt.exe`. ReShade loads all `.addon` files from the host executable's directory automatically on startup.
 
 ## Notes
 
