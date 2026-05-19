@@ -149,8 +149,12 @@ static void on_reshade_present(effect_runtime *runtime)
     *std::to_chars(wb, wb + sizeof(wb), w).ptr = '\0';
     *std::to_chars(hb, hb + sizeof(hb), h).ptr = '\0';
 
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-NTSC.fx", "Resolution_X", wb);
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-NTSC.fx", "Resolution_Y", hb);
+    runtime->set_preprocessor_definition_for_effect("CRT-Guest-NTSC.fx",     "Resolution_X", wb);
+    runtime->set_preprocessor_definition_for_effect("CRT-Guest-NTSC.fx",     "Resolution_Y", hb);
+    runtime->set_preprocessor_definition_for_effect("CRT-Guest-Advanced.fx", "Resolution_X", wb);
+    runtime->set_preprocessor_definition_for_effect("CRT-Guest-Advanced.fx", "Resolution_Y", hb);
+    runtime->set_preprocessor_definition_for_effect("CRT-Guest-HD.fx",       "Resolution_X", wb);
+    runtime->set_preprocessor_definition_for_effect("CRT-Guest-HD.fx",       "Resolution_Y", hb);
 }
 
 extern "C" __declspec(dllexport) const char *NAME        = "Auto Resolution";
