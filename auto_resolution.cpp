@@ -18,6 +18,12 @@
  *       512x448 scissors also appear but 512x224 is smaller  →  512x224  ✓
  *     • 512x448 mode → only 512x448 scissors appear          →  512x448  ✓
  *
+ * Why require STABLE_WINDOWS consecutive windows:
+ *   Scene transitions can emit spurious small-resolution scissors for a single
+ *   window (e.g. UI overlays during loading). Requiring the same result across
+ *   two consecutive windows filters these one-off false positives while still
+ *   responding promptly to real mode changes.
+ *
  * Fallback — init_resource:
  *   Modes whose draw calls emit no detectable scissors (e.g. 512x256) are
  *   caught by monitoring newly created render targets.  The inferred native
@@ -48,9 +54,14 @@ static constexpr struct { uint32_t w, h; } k_ps2_modes[k_mode_count] = {
 
 static constexpr uint32_t ACCUMULATE_FRAMES = 8;
 static constexpr uint32_t MIN_ACC_COUNT     = 2;
+static constexpr uint32_t STABLE_WINDOWS    = 2;
 
 static uint32_t s_acc_counts[k_mode_count] = {};
 static uint32_t s_acc_frames = 0;
+
+// Stability tracking: scissor result must repeat for STABLE_WINDOWS before applying
+static int      s_pending_idx   = -1;
+static uint32_t s_pending_count = 0;
 
 // Fallback: native resolution inferred from render-target creation
 static uint32_t s_rt_native_w = 0;
@@ -89,7 +100,9 @@ static void on_init_resource(device *, const resource_desc &desc,
 
     // Invalidate stale scissor data from the previous mode
     std::memset(s_acc_counts, 0, sizeof(s_acc_counts));
-    s_acc_frames = 0;
+    s_acc_frames    = 0;
+    s_pending_idx   = -1;
+    s_pending_count = 0;
 }
 
 static void on_bind_scissor_rects(command_list *, uint32_t, uint32_t count, const rect *rects)
@@ -123,20 +136,38 @@ static void on_reshade_present(effect_runtime *runtime)
     }
     std::memset(s_acc_counts, 0, sizeof(s_acc_counts));
 
+    // Reject scissor modes whose native width differs from the RT baseline.
+    // Valid sub-modes (e.g. 512x224 within a 512x448 RT) share the same width;
+    // internal ops during transitions (e.g. 256x224 in a 512x448 RT) do not.
+    if (best_idx >= 0 && s_rt_native_w > 0 &&
+        k_ps2_modes[best_idx].w != s_rt_native_w)
+        best_idx = -1;
+
     uint32_t w, h;
     if (best_idx >= 0)
     {
+        // Require STABLE_WINDOWS consecutive windows before accepting
+        if (best_idx == s_pending_idx)
+            ++s_pending_count;
+        else {
+            s_pending_idx   = best_idx;
+            s_pending_count = 1;
+        }
+        if (s_pending_count < STABLE_WINDOWS)
+            return;
+
         w = k_ps2_modes[best_idx].w;
         h = k_ps2_modes[best_idx].h;
     }
-    else if (s_rt_native_w > 0)
-    {
-        w = s_rt_native_w;
-        h = s_rt_native_h;
-    }
     else
     {
-        return;
+        s_pending_idx   = -1;
+        s_pending_count = 0;
+
+        if (s_rt_native_w == 0)
+            return;
+        w = s_rt_native_w;
+        h = s_rt_native_h;
     }
 
     if (w == s_applied_width && h == s_applied_height)
@@ -160,7 +191,7 @@ static void on_reshade_present(effect_runtime *runtime)
 extern "C" __declspec(dllexport) const char *NAME        = "Auto Resolution";
 extern "C" __declspec(dllexport) const char *DESCRIPTION =
     "Detects PS2 native resolution from scissor rect analysis and updates "
-    "CRT-Guest-NTSC Resolution_X/Y preprocessor definitions automatically.";
+    "CRT-Guest Resolution_X/Y preprocessor definitions automatically.";
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 {
