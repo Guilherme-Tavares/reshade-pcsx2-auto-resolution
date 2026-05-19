@@ -1,10 +1,12 @@
 # reshade-auto-resolution
 
-A ReShade addon that automatically updates the `Resolution_X` and `Resolution_Y` preprocessor definitions of **CRT-Guest-NTSC.fx** to match the PS2's current native resolution — no manual adjustment needed when PCSX2 switches between video modes.
+A ReShade addon that automatically updates the `Resolution_X` and `Resolution_Y` preprocessor definitions of the [CRT-Guest-ReShade](https://github.com/HelelSingh/CRT-Guest-ReShade) shader suite to match the PS2's current native resolution — no manual adjustment needed when PCSX2 switches between video modes.
+
+Supported shaders: `CRT-Guest-NTSC.fx`, `CRT-Guest-Advanced.fx`, `CRT-Guest-HD.fx`. Compatible with all versions of the port.
 
 ## The problem
 
-`CRT-Guest-NTSC.fx` uses `Resolution_X` and `Resolution_Y` as preprocessor definitions to size its internal NTSC pipeline textures. These must match the PS2's native output resolution (e.g. 512×448 or 640×448), which games change dynamically — typically between gameplay and cutscenes or menus.
+The CRT-Guest shaders use `Resolution_X` and `Resolution_Y` as preprocessor definitions to size their internal pipeline textures. These must match the PS2's native output resolution (e.g. 512×448 or 640×448), which games change dynamically — typically between gameplay and cutscenes or menus.
 
 Updating them manually in the ReShade UI each time is tedious. Editing the preset `.ini` on disk causes a full shader reload with a visible flash.
 
@@ -51,7 +53,7 @@ Any integer upscale factor is handled automatically.
 
 - ReShade 6.x (with add-on support enabled)
 - PCSX2 (any recent build)
-- `CRT-Guest-NTSC.fx` loaded in your ReShade preset
+- At least one CRT-Guest shader loaded in your ReShade preset
 
 ## Building
 
@@ -64,10 +66,13 @@ Any integer upscale factor is handled automatically.
 
 ## Installation
 
-Copy `AutoResolution64.addon` to the same folder as `pcsx2-qt.exe`. ReShade loads all `.addon` files from the host executable's directory automatically on startup.
+1. Download `AutoResolution64.addon`
+2. Place it in the same folder as `pcsx2-qt.exe`
+3. ReShade loads it automatically on startup
 
 ## Notes
 
 - `AspectSize_X` and `AspectSize_Y` are never touched — only `Resolution_X` and `Resolution_Y` are updated.
+- Shaders not present in the active preset are silently ignored.
 - The preset `.ini` file is never written to disk.
 - The addon has no visible UI. Detection is silent and automatic.
