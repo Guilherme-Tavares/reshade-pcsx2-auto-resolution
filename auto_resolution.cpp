@@ -246,18 +246,33 @@ static void on_reshade_present(effect_runtime *runtime)
     *std::to_chars(wb, wb + sizeof(wb), w).ptr = '\0';
     *std::to_chars(hb, hb + sizeof(hb), h).ptr = '\0';
 
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-NTSC.fx",     "Resolution_X", wb);
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-NTSC.fx",     "Resolution_Y", hb);
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-Advanced.fx", "Resolution_X", wb);
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-Advanced.fx", "Resolution_Y", hb);
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-HD.fx",       "Resolution_X", wb);
-    runtime->set_preprocessor_definition_for_effect("CRT-Guest-HD.fx",       "Resolution_Y", hb);
+    struct SetResCtx { const char *wb; const char *hb; };
+    SetResCtx ctx = { wb, hb };
+    runtime->enumerate_techniques(nullptr,
+        [](effect_runtime *rt, effect_technique tech, void *ud) {
+            auto &c = *static_cast<SetResCtx *>(ud);
+            char name[256];
+            rt->get_technique_effect_name(tech, name);
+
+            // Restrict to CRT-Guest variants: filename must contain "crt" (case-insensitive).
+            // This prevents unrelated effects from being touched, avoiding spurious reloads
+            // of effects whose required textures may be absent (e.g. UIMask.fx).
+            bool has_crt = false;
+            for (const char *p = name; p[0] && p[1] && p[2]; ++p)
+                if ((p[0] | 0x20) == 'c' && (p[1] | 0x20) == 'r' && (p[2] | 0x20) == 't')
+                    { has_crt = true; break; }
+            if (!has_crt)
+                return;
+
+            rt->set_preprocessor_definition_for_effect(name, "Resolution_X", c.wb);
+            rt->set_preprocessor_definition_for_effect(name, "Resolution_Y", c.hb);
+        }, &ctx);
 }
 
 extern "C" __declspec(dllexport) const char *NAME        = "Auto Resolution";
 extern "C" __declspec(dllexport) const char *DESCRIPTION =
     "Detects PS2 native resolution from scissor rect analysis and updates "
-    "CRT-Guest Resolution_X/Y preprocessor definitions automatically.";
+    "Resolution_X/Y preprocessor definitions for all active effects automatically.";
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 {

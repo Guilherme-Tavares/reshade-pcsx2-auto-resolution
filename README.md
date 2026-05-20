@@ -1,8 +1,8 @@
-# reshade-auto-resolution
+# reshade-pcsx2-auto-resolution
 
 A ReShade addon that automatically updates the `Resolution_X` and `Resolution_Y` preprocessor definitions of the [CRT-Guest-ReShade](https://github.com/HelelSingh/CRT-Guest-ReShade) shader suite to match the PS2's current native resolution — no manual adjustment needed when PCSX2 switches between video modes.
 
-Supported shaders: `CRT-Guest-NTSC.fx`, `CRT-Guest-Advanced.fx`, `CRT-Guest-HD.fx`. Compatible with all versions of the port.
+Compatible with all CRT-Guest ports and variants. The shader filename must contain `CRT` (case-insensitive).
 
 ## The problem
 
