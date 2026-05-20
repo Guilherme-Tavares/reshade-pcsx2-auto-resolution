@@ -2,7 +2,7 @@
 
 A ReShade addon that automatically updates the `Resolution_X` and `Resolution_Y` preprocessor definitions of the [CRT-Guest-ReShade](https://github.com/HelelSingh/CRT-Guest-ReShade) shader suite to match the PS2's current native resolution — no manual adjustment needed when PCSX2 switches between video modes.
 
-Compatible with all CRT-Guest ports and variants. The shader filename must contain `CRT` (case-insensitive).
+Compatible with all CRT-Guest ports and variants, including NTSC-Adaptive. The shader filename must contain `CRT` or `NTSC` (case-insensitive).
 
 ## The problem
 
@@ -38,7 +38,10 @@ The fallback result is used only when scissor analysis produces no qualifying mo
 |---|---|
 | 640 | 480 |
 | 640 | 448 |
+| 640 | 256 |
+| 640 | 224 |
 | 512 | 448 |
+| 512 | 416 |
 | 512 | 256 |
 | 512 | 240 |
 | 512 | 224 |
@@ -51,7 +54,7 @@ Any integer upscale factor is handled automatically.
 
 ## Requirements
 
-- ReShade 6.x (with add-on support enabled)
+- ReShade 6.7.3 or later (with add-on support enabled)
 - PCSX2 (any recent build)
 - At least one CRT-Guest shader loaded in your ReShade preset
 

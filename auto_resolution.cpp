@@ -58,11 +58,14 @@ using namespace reshade::api;
 
 // Ordered large→small. Reverse traversal in on_reshade_present finds the
 // smallest qualifying mode efficiently.
-static constexpr uint32_t k_mode_count = 10;
+static constexpr uint32_t k_mode_count = 13;
 static constexpr struct { uint32_t w, h; } k_ps2_modes[k_mode_count] = {
     {640, 480},
     {640, 448},
+    {640, 256},
+    {640, 224},
     {512, 448},
+    {512, 416},
     {512, 256},
     {512, 240},
     {512, 224},
@@ -254,14 +257,25 @@ static void on_reshade_present(effect_runtime *runtime)
             char name[256];
             rt->get_technique_effect_name(tech, name);
 
-            // Restrict to CRT-Guest variants: filename must contain "crt" (case-insensitive).
-            // This prevents unrelated effects from being touched, avoiding spurious reloads
-            // of effects whose required textures may be absent (e.g. UIMask.fx).
-            bool has_crt = false;
-            for (const char *p = name; p[0] && p[1] && p[2]; ++p)
-                if ((p[0] | 0x20) == 'c' && (p[1] | 0x20) == 'r' && (p[2] | 0x20) == 't')
-                    { has_crt = true; break; }
-            if (!has_crt)
+            // Restrict to CRT-Guest family: filename must contain "crt" or "ntsc"
+            // (case-insensitive). Covers all CRT-Guest ports/variants and NTSC-Adaptive.fx
+            // from the same author. Prevents unrelated effects from being touched, avoiding
+            // spurious reloads of effects whose required textures may be absent (e.g. UIMask.fx).
+            bool matched = false;
+            for (const char *p = name; *p && !matched; ++p)
+            {
+                if (p[1] && p[2])
+                {
+                    if ((p[0]|0x20)=='c' && (p[1]|0x20)=='r' && (p[2]|0x20)=='t')
+                        matched = true;
+                }
+                if (p[1] && p[2] && p[3])
+                {
+                    if ((p[0]|0x20)=='n' && (p[1]|0x20)=='t' && (p[2]|0x20)=='s' && (p[3]|0x20)=='c')
+                        matched = true;
+                }
+            }
+            if (!matched)
                 return;
 
             rt->set_preprocessor_definition_for_effect(name, "Resolution_X", c.wb);
