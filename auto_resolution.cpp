@@ -37,6 +37,17 @@
  *   meaning the mode genuinely changed — the downgrade is allowed through.
  *   On suppression the RT baseline is restored to the confirmed display mode
  *   so that a corrupt s_rt_native cannot poison the scissor-less fallback.
+ *
+ * Stuck-state escape:
+ *   Once a spurious small mode is incorrectly applied (e.g. a 256x224
+ *   loading-screen artifact after a FMV), the downgrade guard cannot help:
+ *   there is no longer a downgrade to suppress.  When the smallest qualifying
+ *   candidate equals the applied mode but a strictly wider qualifying mode has
+ *   more accumulated hits — meaning it is the dominant display signal — the
+ *   stuck mode is overridden in favour of the wider mode via the stability
+ *   mechanism.  The strictly-wider condition (w > applied_w, not just larger)
+ *   prevents 512x448 buffer co-occurrences from escaping a correct 512x224
+ *   applied mode (same width, not wider).
  */
 
 #include <reshade.hpp>
@@ -172,6 +183,26 @@ static void on_reshade_present(effect_runtime *runtime)
                 best_idx      = -1;
                 s_rt_native_w = s_applied_width;
                 s_rt_native_h = s_applied_height;
+            }
+        }
+    }
+
+    // Stuck-state escape: when the smallest qualifying candidate equals the applied
+    // mode but a strictly wider mode dominates in hit count, override to that wider
+    // mode.  "Strictly wider" (w > applied_w) prevents 512x448 buffer hits from
+    // escaping a correct 512x224 applied mode (same width, not wider).
+    if (best_idx >= 0 &&
+        k_ps2_modes[best_idx].w == s_applied_width &&
+        k_ps2_modes[best_idx].h == s_applied_height)
+    {
+        for (int i = static_cast<int>(k_mode_count) - 1; i >= 0; --i)
+        {
+            if (k_ps2_modes[i].w > s_applied_width &&
+                s_acc_counts[i] >= MIN_ACC_COUNT &&
+                s_acc_counts[i] > s_acc_counts[best_idx])
+            {
+                best_idx = static_cast<int>(i);
+                break;
             }
         }
     }
