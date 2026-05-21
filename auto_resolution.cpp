@@ -37,6 +37,10 @@
  *   meaning the mode genuinely changed — the downgrade is allowed through.
  *   On suppression the RT baseline is restored to the confirmed display mode
  *   so that a corrupt s_rt_native cannot poison the scissor-less fallback.
+ *   At startup (s_applied_width == 0), the RT-inferred native is used as the
+ *   guard baseline when available, preventing BIOS opening-animation scissors
+ *   from prematurely locking in a small resolution before the real mode
+ *   stabilizes.
  *
  * Stuck-state escape:
  *   Once a spurious small mode is incorrectly applied (e.g. a 256x224
@@ -165,28 +169,33 @@ static void on_reshade_present(effect_runtime *runtime)
     // display-mode scissors; a genuine mode change stops the old scissors first.
     // On suppression, restore the RT baseline to the confirmed display mode so
     // that a render target created by an effect cannot corrupt the fallback.
-    if (best_idx >= 0 && s_applied_width > 0)
+    // At startup (s_applied_width == 0), fall back to the RT-inferred native as
+    // the guard baseline so BIOS animation scissors cannot prematurely win.
+    const uint32_t guard_w = s_applied_width > 0 ? s_applied_width : s_rt_native_w;
+    const uint32_t guard_h = s_applied_width > 0 ? s_applied_height : s_rt_native_h;
+
+    if (best_idx >= 0 && guard_w > 0)
     {
         const bool is_downgrade =
-            k_ps2_modes[best_idx].w < s_applied_width ||
-            (k_ps2_modes[best_idx].w == s_applied_width &&
-             k_ps2_modes[best_idx].h < s_applied_height);
+            k_ps2_modes[best_idx].w < guard_w ||
+            (k_ps2_modes[best_idx].w == guard_w &&
+             k_ps2_modes[best_idx].h < guard_h);
 
         if (is_downgrade)
         {
             bool applied_still_active = false;
             for (uint32_t i = 0; i < k_mode_count && !applied_still_active; ++i)
             {
-                if (k_ps2_modes[i].w == s_applied_width &&
-                    k_ps2_modes[i].h == s_applied_height &&
+                if (k_ps2_modes[i].w == guard_w &&
+                    k_ps2_modes[i].h == guard_h &&
                     s_acc_counts[i] >= MIN_ACC_COUNT)
                     applied_still_active = true;
             }
             if (applied_still_active)
             {
                 best_idx      = -1;
-                s_rt_native_w = s_applied_width;
-                s_rt_native_h = s_applied_height;
+                s_rt_native_w = guard_w;
+                s_rt_native_h = guard_h;
             }
         }
     }
