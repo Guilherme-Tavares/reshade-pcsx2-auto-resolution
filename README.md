@@ -2,7 +2,7 @@
 
 A ReShade addon that automatically updates the `Resolution_X` and `Resolution_Y` preprocessor definitions of the [CRT-Guest-ReShade](https://github.com/HelelSingh/CRT-Guest-ReShade) shader suite to match the PS2's current native resolution, with no manual adjustment needed when PCSX2 switches between video modes.
 
-Compatible with all CRT-Guest ports and variants, including NTSC-Adaptive. The shader filename must contain `CRT` or `NTSC` (case-insensitive).
+Compatible with all CRT-Guest ports and variants. The shader filename must contain `CRT` or `NTSC` (case-insensitive).
 
 ## The problem
 
@@ -36,6 +36,7 @@ The fallback result is used only when scissor analysis produces no qualifying mo
 
 | Resolution_X | Resolution_Y |
 |---|---|
+| 640 | 512 |
 | 640 | 480 |
 | 640 | 448 |
 | 640 | 256 |
@@ -73,6 +74,16 @@ Any integer upscale factor is handled automatically.
 1. Download `AutoResolution64.addon`
 2. Place it in the same folder as `pcsx2-qt.exe`
 3. ReShade loads it automatically on startup
+
+## Known limitations
+
+**Screen Offsets (PCSX2 Settings → Graphics → Display)**
+
+When this option is enabled, PCSX2 shifts scissor rectangles away from the origin, causing the addon to ignore them. Detection falls back to render target analysis, which may produce incorrect results. Disable Screen Offsets for reliable resolution detection.
+
+**BIOS animation and scene transitions**
+
+During certain phases, notably the PS2 BIOS opening animation, PCSX2 emits scissor rectangles that do not correspond to the actual display output. The add-on may briefly apply an intermediate resolution during these phases. Detection corrects itself once the main rendering begins.
 
 ## Notes
 
