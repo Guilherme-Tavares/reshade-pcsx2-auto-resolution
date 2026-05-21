@@ -62,8 +62,9 @@ using namespace reshade::api;
 
 // Ordered large→small. Reverse traversal in on_reshade_present finds the
 // smallest qualifying mode efficiently.
-static constexpr uint32_t k_mode_count = 14;
+static constexpr uint32_t k_mode_count = 15;
 static constexpr struct { uint32_t w, h; } k_ps2_modes[k_mode_count] = {
+    {640, 512},
     {640, 480},
     {640, 448},
     {640, 256},
