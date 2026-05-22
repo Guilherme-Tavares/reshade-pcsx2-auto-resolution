@@ -1,6 +1,6 @@
 # reshade-pcsx2-auto-resolution
 
-A ReShade addon that automatically updates the `Resolution_X` and `Resolution_Y` preprocessor definitions of the [CRT-Guest-ReShade](https://github.com/HelelSingh/CRT-Guest-ReShade) shader suite to match the PS2's current native resolution, with no manual adjustment needed when PCSX2 switches between video modes.
+A ReShade add-on that automatically updates the `Resolution_X` and `Resolution_Y` preprocessor definitions of the [CRT-Guest-ReShade](https://github.com/HelelSingh/CRT-Guest-ReShade) shader suite to match the PS2's current native resolution, with no manual adjustment needed when PCSX2 switches between video modes.
 
 Compatible with all CRT-Guest ports and variants. The shader filename must contain `CRT` or `NTSC` (case-insensitive).
 
@@ -14,7 +14,7 @@ Updating them manually in the ReShade UI each time is tedious. Editing the prese
 
 ### Primary: scissor rect analysis
 
-PCSX2 translates the PS2 GS SCISSOR register into a D3D/Vulkan scissor rectangle for each draw call. The addon accumulates these rectangles over a rolling window of 8 frames: any rectangle whose dimensions are an integer multiple of a known PS2 native resolution is counted. The **smallest** mode that reaches the minimum count threshold is taken as the active resolution.
+PCSX2 translates the PS2 GS SCISSOR register into a D3D/Vulkan scissor rectangle for each draw call. The add-on accumulates these rectangles over a rolling window of 8 frames: any rectangle whose dimensions are an integer multiple of a known PS2 native resolution is counted. The **smallest** mode that reaches the minimum count threshold is taken as the active resolution.
 
 This correctly handles cases where PCSX2 reuses a larger render target for a smaller display mode (e.g. a 512×448 RT reused for a 512×224 display): both 512×224 and 512×448 scissors appear in the window, but the smallest qualifying result is 512×224.
 
@@ -22,7 +22,7 @@ Accumulating over multiple frames is necessary because some modes emit only ~1 m
 
 ### Fallback: render target detection
 
-Some modes emit no detectable scissors. For those, the addon monitors newly created render targets via `init_resource`: if a render target's dimensions are a clean integer multiple of a known PS2 native resolution, using the same factor for both axes, the native resolution is identified.
+Some modes emit no detectable scissors. For those, the add-on monitors newly created render targets via `init_resource`: if a render target's dimensions are a clean integer multiple of a known PS2 native resolution, using the same factor for both axes, the native resolution is identified.
 
 ```
 RT 1024×896  →  1024/512 = 2,  896/448 = 2  →  native 512×448  ✓
@@ -82,7 +82,7 @@ Any integer upscale factor is handled automatically.
 
 **Screen Offsets (PCSX2 Settings → Graphics → Display)**
 
-When this option is enabled, PCSX2 shifts scissor rectangles away from the origin, causing the addon to ignore them. Detection falls back to render target analysis, which may produce incorrect results. Disable Screen Offsets for reliable resolution detection.
+When this option is enabled, PCSX2 shifts scissor rectangles away from the origin, causing the add-on to ignore them. Detection falls back to render target analysis, which may produce incorrect results. Disable Screen Offsets for reliable resolution detection.
 
 **BIOS animation and scene transitions**
 
@@ -92,5 +92,4 @@ During certain phases, notably the PS2 BIOS opening animation, PCSX2 emits sciss
 
 - `AspectSize_X` and `AspectSize_Y` are never touched; only `Resolution_X` and `Resolution_Y` are updated.
 - Shaders not present in the active preset are silently ignored.
-- The preset `.ini` file is never written to disk.
-- The addon has no visible UI. Detection is silent and automatic.
+- The add-on has no visible UI. Detection is silent and automatic.
