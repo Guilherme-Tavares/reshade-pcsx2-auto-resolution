@@ -187,14 +187,8 @@ static void on_reshade_present(effect_runtime *runtime)
 
         if (is_downgrade)
         {
-            bool applied_still_active = false;
-            for (uint32_t i = 0; i < k_mode_count && !applied_still_active; ++i)
-            {
-                if (k_ps2_modes[i].w == guard_w &&
-                    k_ps2_modes[i].h == guard_h &&
-                    s_acc_counts[i] >= MIN_ACC_COUNT)
-                    applied_still_active = true;
-            }
+            const int guard_idx = try_snap_ps2(guard_w, guard_h);
+            const bool applied_still_active = (guard_idx >= 0 && s_acc_counts[guard_idx] >= MIN_ACC_COUNT);
             if (applied_still_active)
             {
                 best_idx      = -1;
