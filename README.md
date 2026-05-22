@@ -86,7 +86,7 @@ When this option is enabled, PCSX2 shifts scissor rectangles away from the origi
 
 **BIOS animation and scene transitions**
 
-During certain phases, notably the PS2 BIOS opening animation, PCSX2 emits scissor rectangles that do not correspond to the actual display output. The add-on may briefly apply an intermediate resolution during these phases. Detection corrects itself once the main rendering begins.
+During certain phases, notably the PS2 BIOS opening animation, PCSX2 can emit scissor rectangles that do not correspond to the actual display output. The add-on may briefly apply an intermediate resolution during these phases. Detection corrects itself once the main rendering begins.
 
 ## Notes
 
