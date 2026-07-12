@@ -39,12 +39,14 @@ The fallback result is used only when scissor analysis produces no qualifying mo
 | 640 | 512 |
 | 640 | 480 |
 | 640 | 448 |
+| 640 | 447 |
 | 640 | 417 |
 | 640 | 416 |
 | 640 | 256 |
 | 640 | 224 |
 | 512 | 512 |
 | 512 | 448 |
+| 512 | 447 |
 | 512 | 417 |
 | 512 | 416 |
 | 512 | 256 |
