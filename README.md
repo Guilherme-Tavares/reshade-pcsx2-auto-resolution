@@ -20,6 +20,12 @@ This correctly handles cases where PCSX2 reuses a larger render target for a sma
 
 Accumulating over multiple frames is necessary because some modes emit only ~1 matching scissor per frame, too sparse to qualify within a single frame but reliable over a short window.
 
+### Interlaced-field handling
+
+An interlaced display (such as 640×448) is drawn field by field, so PCSX2 emits both full-frame scissors and half-height field scissors (the smaller half-height mode) in the same window. The smallest-qualifying rule would then pick the field and halve the detected height. A genuine progressive mode (such as ICO's real 512×224) looks identical in the ordinary scissor histogram, so that signal alone cannot separate the two.
+
+The discriminator is the vertical offset. Interlaced rendering also emits full-frame-height scissors at a vertical offset, which a progressive mode never does. When a half-height candidate's double-height frame is present among the offset scissors, the candidate is treated as an interlaced field and skipped, so detection resolves to the full frame. When no offset signal exists, the half-height mode is kept, so genuine 224 and 256 line modes are untouched.
+
 ### Fallback: render target detection
 
 Some modes emit no detectable scissors. For those, the add-on monitors newly created render targets via `init_resource`: if a render target's dimensions are a clean integer multiple of a known PS2 native resolution, using the same factor for both axes, the native resolution is identified.
@@ -79,6 +85,23 @@ Any integer upscale factor is handled automatically.
 1. Download `AutoResolution64.addon`
 2. Place it in the same folder as `pcsx2-qt.exe`
 3. ReShade loads it automatically on startup
+
+## Logging
+
+The add-on writes to ReShade's log (`ReShade.log`, next to `pcsx2-qt.exe`). By default it logs only a load banner and each resolution change, for example:
+
+```
+[AutoResolution] Applied 640x448 (scissor)
+```
+
+For troubleshooting, verbose diagnostics can be enabled by adding this to `ReShade.ini`:
+
+```ini
+[AutoResolution]
+Verbose=1
+```
+
+Verbose mode additionally logs distinct render-target sizes and a per-window scissor histogram (deduplicated, so only transitions appear). The setting is read live, so it can be toggled without restarting. Leave it off for normal use.
 
 ## Known limitations
 

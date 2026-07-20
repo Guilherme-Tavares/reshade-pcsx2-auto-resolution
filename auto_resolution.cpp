@@ -52,11 +52,27 @@
  *   mechanism.  The strictly-wider condition (w > applied_w, not just larger)
  *   prevents 512x448 buffer co-occurrences from escaping a correct 512x224
  *   applied mode (same width, not wider).
+ *
+ * Interlaced-field suppression:
+ *   An interlaced display (e.g. 640x448) is drawn field by field, so PCSX2
+ *   emits both full-frame scissors (top==0) and half-height field scissors
+ *   (the smaller W x H/2) in the same window.  The smallest-qualifying rule
+ *   would then pick the half field and halve the detected height (the Ace
+ *   Combat 04 case: a real 640x448 detected as 640x224).  A genuine progressive
+ *   mode (e.g. ICO's real 512x224) is geometrically identical in the top==0
+ *   histogram, so top==0 scissors alone cannot separate the two.  The
+ *   discriminator is the offset histogram (s_off_counts): interlaced rendering
+ *   also emits full-frame-height scissors at a vertical offset (top != 0),
+ *   which a progressive mode never does.  A half-height candidate is skipped
+ *   when its double-height frame is qualifying in the offset histogram, so the
+ *   scan resolves to the full frame; when no such offset signal exists the
+ *   candidate is kept, leaving genuine 224/256 modes untouched.
  */
 
 #include <reshade.hpp>
 #include <charconv>
 #include <cstring>
+#include <cstdio>
 
 using namespace reshade::api;
 
@@ -104,6 +120,36 @@ static uint32_t s_rt_native_h = 0;
 static uint32_t s_applied_width  = 0;
 static uint32_t s_applied_height = 0;
 
+// Accumulator for left==0 scissors that carry a vertical offset (top != 0),
+// which the primary detector discards. A non-zero count here for a full-frame
+// height (e.g. 640x448 drawn at an offset) is the direct signature of
+// interlaced rendering, used to tell a genuine half-height display mode apart
+// from an interlaced field. Populated unconditionally; also surfaced by the
+// verbose logging.
+static uint32_t s_off_counts[k_mode_count] = {};
+
+// Verbose logging toggle, read from [AutoResolution] Verbose in ReShade.ini.
+// When off, only resolution changes are logged; when on, render-target sizes
+// and per-window scissor histograms are logged too.
+static bool s_verbose = false;
+
+// Format a mode-indexed count table into "WxH:count " tokens for logging.
+static void format_hist(char *out, size_t cap, const uint32_t *counts)
+{
+    size_t off = 0;
+    out[0] = '\0';
+    for (uint32_t i = 0; i < k_mode_count; ++i)
+    {
+        if (counts[i] == 0)
+            continue;
+        const int n = std::snprintf(out + off, cap - off, "%ux%u:%u ",
+            k_ps2_modes[i].w, k_ps2_modes[i].h, counts[i]);
+        if (n < 0 || static_cast<size_t>(n) >= cap - off)
+            break;
+        off += static_cast<size_t>(n);
+    }
+}
+
 static int try_snap_ps2(uint32_t w, uint32_t h)
 {
     for (uint32_t i = 0; i < k_mode_count; ++i)
@@ -125,6 +171,26 @@ static void on_init_resource(device *, const resource_desc &desc,
     if ((desc.usage & resource_usage::render_target) == resource_usage::undefined)
         return;
 
+    if (s_verbose)
+    {
+        // Log each distinct render-target size (deduped against the previous one).
+        static uint32_t s_last_rt_w = 0, s_last_rt_h = 0;
+        if (desc.texture.width != s_last_rt_w || desc.texture.height != s_last_rt_h)
+        {
+            s_last_rt_w = desc.texture.width;
+            s_last_rt_h = desc.texture.height;
+            const int sidx = try_snap_ps2(desc.texture.width, desc.texture.height);
+            char line[160];
+            if (sidx >= 0)
+                std::snprintf(line, sizeof(line), "[AutoResolution] RT %ux%u snap=%ux%u",
+                    desc.texture.width, desc.texture.height, k_ps2_modes[sidx].w, k_ps2_modes[sidx].h);
+            else
+                std::snprintf(line, sizeof(line), "[AutoResolution] RT %ux%u snap=none",
+                    desc.texture.width, desc.texture.height);
+            reshade::log::message(reshade::log::level::info, line);
+        }
+    }
+
     const int idx = try_snap_ps2(desc.texture.width, desc.texture.height);
     if (idx < 0)
         return;
@@ -134,6 +200,7 @@ static void on_init_resource(device *, const resource_desc &desc,
 
     // Invalidate stale scissor data from the previous mode
     std::memset(s_acc_counts, 0, sizeof(s_acc_counts));
+    std::memset(s_off_counts, 0, sizeof(s_off_counts));
     s_acc_frames    = 0;
     s_pending_idx   = -1;
     s_pending_count = 0;
@@ -144,7 +211,18 @@ static void on_bind_scissor_rects(command_list *, uint32_t, uint32_t count, cons
     for (uint32_t i = 0; i < count; ++i)
     {
         if (rects[i].left != 0 || rects[i].top != 0)
+        {
+            // Accumulate left-aligned but vertically offset scissors (top != 0)
+            // into the offset histogram. The primary detector ignores them, but
+            // their presence at a full-frame height is the interlace signature.
+            if (rects[i].left == 0)
+            {
+                const int oidx = try_snap_ps2(rects[i].width(), rects[i].height());
+                if (oidx >= 0)
+                    ++s_off_counts[oidx];
+            }
             continue;
+        }
 
         const int idx = try_snap_ps2(rects[i].width(), rects[i].height());
         if (idx >= 0)
@@ -158,14 +236,63 @@ static void on_reshade_present(effect_runtime *runtime)
         return;
     s_acc_frames = 0;
 
-    // Find smallest mode with sufficient accumulated hits
+    // Refresh the verbose logging flag from ReShade.ini ([AutoResolution] Verbose).
+    // Absent key leaves s_verbose unchanged (defaults to false).
+    reshade::get_config_value(runtime, "AutoResolution", "Verbose", s_verbose);
+
+    // Find smallest mode with sufficient accumulated hits.
+    //
+    // Interlaced-field suppression: an interlaced display (e.g. 640x448) is
+    // drawn field by field, so PCSX2 emits both full-frame scissors (top==0) and
+    // half-height field scissors (the smaller W x H/2) in the same window.  The
+    // plain "smallest qualifying" rule would pick the half field and halve the
+    // detected height.  A genuine progressive mode (e.g. ICO's real 512x224) is
+    // geometrically identical in the top==0 histogram, so top==0 alone cannot
+    // tell them apart.  The discriminator is the offset histogram: interlaced
+    // rendering also emits full-frame-height scissors at a vertical offset
+    // (top != 0), which a progressive mode never does.  So when a half-height
+    // candidate's double-height frame is present in the offset histogram, treat
+    // the candidate as a field artifact and skip it, letting the scan resolve to
+    // the full frame.
     int best_idx = -1;
     for (int i = static_cast<int>(k_mode_count) - 1; i >= 0; --i)
     {
-        if (s_acc_counts[i] >= MIN_ACC_COUNT)
+        if (s_acc_counts[i] < MIN_ACC_COUNT)
+            continue;
+
+        const int frame_idx = try_snap_ps2(k_ps2_modes[i].w, k_ps2_modes[i].h * 2);
+        if (frame_idx >= 0 && s_off_counts[frame_idx] >= MIN_ACC_COUNT)
+            continue;
+
+        best_idx = i;
+        break;
+    }
+
+    if (s_verbose)
+    {
+        // One line per completed accumulation window: the top==0 scissor
+        // histogram (what detection sees), the offset (top != 0) histogram
+        // (interlace tell), the raw smallest-qualifying pick, the RT-inferred
+        // native, and the currently applied mode. Deduped: only logged when the
+        // composed line differs from the previous one, so steady state is quiet
+        // and only transitions appear.
+        char h0[256], h1[256], best_s[16];
+        format_hist(h0, sizeof(h0), s_acc_counts);
+        format_hist(h1, sizeof(h1), s_off_counts);
+        if (best_idx >= 0)
+            std::snprintf(best_s, sizeof(best_s), "%ux%u", k_ps2_modes[best_idx].w, k_ps2_modes[best_idx].h);
+        else
+            std::snprintf(best_s, sizeof(best_s), "none");
+        char line[640];
+        std::snprintf(line, sizeof(line),
+            "[AutoResolution] win top0={ %s} off={ %s} raw_best=%s rt_native=%ux%u applied=%ux%u",
+            h0, h1, best_s, s_rt_native_w, s_rt_native_h, s_applied_width, s_applied_height);
+
+        static char s_last_win[640] = {};
+        if (std::strcmp(line, s_last_win) != 0)
         {
-            best_idx = i;
-            break;
+            std::strcpy(s_last_win, line);
+            reshade::log::message(reshade::log::level::info, line);
         }
     }
 
@@ -221,6 +348,7 @@ static void on_reshade_present(effect_runtime *runtime)
     }
 
     std::memset(s_acc_counts, 0, sizeof(s_acc_counts));
+    std::memset(s_off_counts, 0, sizeof(s_off_counts));
 
     uint32_t w, h;
     if (best_idx >= 0)
@@ -254,6 +382,15 @@ static void on_reshade_present(effect_runtime *runtime)
 
     s_applied_width  = w;
     s_applied_height = h;
+
+    // Always-on: log every resolution change with its source (scissor analysis
+    // or render-target fallback).
+    {
+        char line[80];
+        std::snprintf(line, sizeof(line), "[AutoResolution] Applied %ux%u (%s)",
+            w, h, best_idx >= 0 ? "scissor" : "rt-fallback");
+        reshade::log::message(reshade::log::level::info, line);
+    }
 
     char wb[12], hb[12];
     *std::to_chars(wb, wb + sizeof(wb), w).ptr = '\0';
@@ -308,6 +445,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
         reshade::register_event<reshade::addon_event::init_resource>(on_init_resource);
         reshade::register_event<reshade::addon_event::bind_scissor_rects>(on_bind_scissor_rects);
         reshade::register_event<reshade::addon_event::reshade_present>(on_reshade_present);
+        reshade::log::message(reshade::log::level::info,
+            "[AutoResolution] Loaded. Resolution changes are logged; set "
+            "[AutoResolution] Verbose=1 in ReShade.ini for detection diagnostics.");
         break;
     case DLL_PROCESS_DETACH:
         reshade::unregister_addon(hModule);
